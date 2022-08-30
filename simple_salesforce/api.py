@@ -385,6 +385,8 @@ class Salesforce(object):
     def query(self, query, include_deleted=False, **kwargs):
         """Return the result of a Salesforce SOQL query as a dict decoded from
         the Salesforce response JSON payload.
+        8/25/2022 - Now uses the Composite endpoint so query can be sent as POST request.
+                    Using GET resulted in a 431 error if the query string was too long.
 
         Arguments:
 
@@ -392,13 +394,19 @@ class Salesforce(object):
                    SELECT Id FROM Lead WHERE Email = "waldo@somewhere.com"
         * include_deleted -- True if deleted records should be included
         """
-        url = self.base_url + ('queryAll/' if include_deleted else 'query/')
-        params = {'q': query}
-        # `requests` will correctly encode the query string passed as `params`
-        result = self._call_salesforce('GET', url, name='query',
-                                       params=params, **kwargs)
+        url = self.base_url + 'composite'
+        q_type = ('queryAll' if include_deleted else 'query')
+        body = {
+            'compositeRequest': [{
+                'method': 'GET',
+                'url': '/services/data/v{sf_version}/{q_type}?q={query}'.format(sf_version=self.sf_version, q_type=q_type, query=query),
+                'referenceId': 'query'
+            }]
+        }
 
-        return result.json(object_pairs_hook=OrderedDict)
+        result = self._call_salesforce('POST', url, name='query', json=body, **kwargs)
+        result = result.json(object_pairs_hook=OrderedDict)
+        return result['compositeResponse'][0]['body']
 
     def query_more(
             self, next_records_identifier, identifier_is_url=False,
