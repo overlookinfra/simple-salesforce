@@ -15,5 +15,3 @@ docs/_build/
 # These are auto-created by sphinx-apidoc
 docs/simple_salesforce*.rst
 docs/modules.rst
-.vscode
-venv

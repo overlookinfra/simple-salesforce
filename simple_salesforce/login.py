@@ -6,34 +6,30 @@ Heavily Modified from RestForce 1.0.0
 DEFAULT_CLIENT_ID_PREFIX = 'RestForce'
 
 
-import warnings
-from datetime import datetime, timedelta, timezone
-from html import escape
-from json.decoder import JSONDecodeError
+from simple_salesforce.api import DEFAULT_API_VERSION
+from simple_salesforce.util import getUniqueElementValueFromXmlString
+from simple_salesforce.exceptions import SalesforceAuthenticationFailed
 
+try:
+    # Python 3+
+    from html import escape
+    from json.decoder import JSONDecodeError
+except ImportError:
+    from cgi import escape
+    JSONDecodeError = ValueError
 import requests
+import warnings
+import time
+from datetime import datetime, timedelta
 from authlib.jose import jwt
-
-from .api import DEFAULT_API_VERSION
-from .exceptions import SalesforceAuthenticationFailed
-from .util import getUniqueElementValueFromXmlString
 
 
 # pylint: disable=invalid-name,too-many-arguments,too-many-locals
 def SalesforceLogin(
-    username=None,
-    password=None,
-    security_token=None,
-    organizationId=None,
-    sf_version=DEFAULT_API_VERSION,
-    proxies=None,
-    session=None,
-    client_id=None,
-    domain=None,
-    consumer_key=None,
-    privatekey_file=None,
-    privatekey=None,
-):
+        username=None, password=None, security_token=None,
+        organizationId=None, sandbox=None, sf_version=DEFAULT_API_VERSION,
+        proxies=None, session=None, client_id=None, domain=None,
+        consumer_key=None, privatekey_file=None):
     """Return a tuple of `(session_id, sf_instance)` where `session_id` is the
     session ID to use for authentication to Salesforce and `sf_instance` is
     the domain of the instance of Salesforce to use for the session.
@@ -45,6 +41,7 @@ def SalesforceLogin(
     * security_token -- the security token for the username
     * organizationId -- the ID of your organization
             NOTE: security_token an organizationId are mutually exclusive
+    * sandbox -- DEPRECATED: Use domain instead.
     * sf_version -- the version of the Salesforce API to use, for example
                     "27.0"
     * proxies -- the optional map of scheme to proxy server
@@ -58,10 +55,20 @@ def SalesforceLogin(
                 'login'.
     * consumer_key -- the consumer key generated for the user
     * privatekey_file -- the path to the private key file used
-                         for signing the JWT token.
-    * privatekey -- the private key to use
-                         for signing the JWT token.
+                         for signing the JWT token
     """
+    if (sandbox is not None) and (domain is not None):
+        raise ValueError("Both 'sandbox' and 'domain' arguments were "
+                         "supplied. Either may be supplied, but not "
+                         "both.")
+
+    if sandbox is not None:
+        warnings.warn("'sandbox' argument is deprecated. Use "
+                      "'domain' instead. Overriding 'domain' "
+                      "with 'sandbox' value.",
+                      DeprecationWarning)
+
+        domain = 'test' if sandbox else 'login'
 
     if domain is None:
         domain = 'login'
@@ -154,24 +161,20 @@ def SalesforceLogin(
             username=username, password=password, client_id=client_id)
     elif username is not None and \
             consumer_key is not None and \
-            (privatekey_file is not None or privatekey is not None):
+            privatekey_file is not None:
         header = {'alg': 'RS256'}
-        expiration = datetime.now(timezone.utc) + timedelta(minutes=3)
+        expiration = datetime.utcnow() + timedelta(minutes=3)
         payload = {
             'iss': consumer_key,
             'sub': username,
             'aud': 'https://{domain}.salesforce.com'.format(domain=domain),
             'exp': '{exp:.0f}'.format(
-                exp=expiration.timestamp()
+                exp=time.mktime(expiration.timetuple()) +
+                    expiration.microsecond / 1e6
             )
         }
-        if privatekey_file is not None:
-            with open(privatekey_file, 'rb') as key_file:
-                key = key_file.read()
-        else:
-            key = privatekey
-
-        assertion = jwt.encode(header, payload, key)
+        with open(privatekey_file, 'rb') as key:
+            assertion = jwt.encode(header, payload, key.read())
 
         login_token_request_data = {
             'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -235,10 +238,10 @@ def token_login(token_url, token_data, domain, consumer_key,
 
     try:
         json_response = response.json()
-    except JSONDecodeError as exc:
+    except JSONDecodeError:
         raise SalesforceAuthenticationFailed(
             response.status_code, response.text
-        ) from exc
+        )
 
     if response.status_code != 200:
         except_code = json_response.get('error')
@@ -251,11 +254,11 @@ def token_login(token_url, token_data, domain, consumer_key,
                             consumer_key=consumer_key
                         )
             warnings.warn("""
-    If your connected app policy is set to "All users may
-    self-authorize", you may need to authorize this
-    application first. Browse to
-    %s
-    in order to Allow Access. Check first to ensure you have a valid
+    If your connected app policy is set to "All users may 
+    self-authorize", you may need to authorize this 
+    application first. Browse to 
+    %s 
+    in order to Allow Access. Check first to ensure you have a valid 
     <approved URI>.""" % auth_url)
         raise SalesforceAuthenticationFailed(except_code, except_msg)
 

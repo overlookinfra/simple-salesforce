@@ -1,17 +1,31 @@
 """Tests for simple-salesforce utility functions"""
-import datetime
-import unittest
-from unittest.mock import Mock
+try:
+    import unittest2 as unittest
+except ImportError:
+    import unittest
 
+try:
+    # Python 2.6/2.7
+    from mock import Mock
+except ImportError:
+    # Python 3
+    from unittest.mock import Mock
+
+
+import datetime
 import pytz
-from simple_salesforce.exceptions import (SalesforceExpiredSession,
-                                          SalesforceGeneralError,
-                                          SalesforceMalformedRequest,
-                                          SalesforceMoreThanOneRecord,
-                                          SalesforceRefusedRequest,
-                                          SalesforceResourceNotFound)
-from simple_salesforce.util import (date_to_iso8601, exception_handler,
-                                    getUniqueElementValueFromXmlString)
+
+from simple_salesforce.exceptions import (
+    SalesforceMoreThanOneRecord,
+    SalesforceMalformedRequest,
+    SalesforceExpiredSession,
+    SalesforceRefusedRequest,
+    SalesforceResourceNotFound,
+    SalesforceGeneralError
+)
+from simple_salesforce.util import (
+    getUniqueElementValueFromXmlString, date_to_iso8601, exception_handler
+)
 
 
 class TestXMLParser(unittest.TestCase):
@@ -39,7 +53,6 @@ class TestXMLParser(unittest.TestCase):
 
 class TestExceptionHandler(unittest.TestCase):
     """Test the exception router"""
-
     def setUp(self):
         """Setup the exception router tests"""
         self.mockresult = Mock()
